@@ -22,6 +22,7 @@ HEADERS = {
 }
 
 
+
 def load_seen():
 
     if os.path.exists(SEEN_FILE):
@@ -43,7 +44,6 @@ def telegram_request(method, data=None, files=None):
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
 
-
     while True:
 
         r = requests.post(
@@ -51,7 +51,6 @@ def telegram_request(method, data=None, files=None):
             data=data,
             files=files
         )
-
 
         try:
             result = r.json()
@@ -61,17 +60,15 @@ def telegram_request(method, data=None, files=None):
             return None
 
 
-
         if result.get("error_code") == 429:
 
             wait = result["parameters"]["retry_after"]
 
             print(
-                f"Telegram limit. Waiting {wait}s"
+                f"Telegram limit {wait}s"
             )
 
             time.sleep(wait)
-
             continue
 
 
@@ -85,18 +82,29 @@ def download_file(url):
 
     try:
 
+        url = url.replace(
+            "&amp;",
+            "&"
+        )
+
         r = requests.get(
             url,
             headers=HEADERS,
-            timeout=20
+            timeout=30
         )
 
 
         if r.status_code == 200:
 
+            ext = ".jpg"
+
+            if ".png" in url:
+                ext = ".png"
+
+
             f = tempfile.NamedTemporaryFile(
                 delete=False,
-                suffix=".jpg"
+                suffix=ext
             )
 
             f.write(r.content)
@@ -124,7 +132,7 @@ def get_reddit_json(url):
         r = requests.get(
             url.rstrip("/") + ".json",
             headers=HEADERS,
-            timeout=15
+            timeout=20
         )
 
         if r.status_code == 200:
@@ -147,13 +155,10 @@ def extract_gallery(post_url):
 
     images = []
 
-
     data = get_reddit_json(post_url)
-
 
     if not data:
         return images
-
 
 
     try:
@@ -161,27 +166,36 @@ def extract_gallery(post_url):
         post = data[0]["data"]["children"][0]["data"]
 
 
-        gallery = post.get("gallery_data")
+        gallery = post.get(
+            "gallery_data"
+        )
+
+        metadata = post.get(
+            "media_metadata"
+        )
 
 
-        media = post.get("media_metadata")
-
-
-        if gallery and media:
-
+        if gallery and metadata:
 
             for item in gallery["items"]:
 
                 media_id = item["media_id"]
 
 
-                if media_id in media:
+                if media_id in metadata:
 
-                    img = media[media_id]["s"]["u"]
+                    img = metadata[media_id]["s"]["u"]
 
                     img = img.replace(
                         "&amp;",
                         "&"
+                    )
+
+
+                    # καλύτερη ποιότητα
+                    img = img.replace(
+                        "preview.",
+                        "i."
                     )
 
                     images.append(img)
@@ -215,7 +229,14 @@ def extract_single_image(entry):
 
     if found:
 
-        return found[0]
+        img = found[0]
+
+        img = img.replace(
+            "preview.",
+            "i."
+        )
+
+        return img
 
 
     return None
@@ -224,16 +245,16 @@ def extract_single_image(entry):
 
 def send_photo(path, caption):
 
-    with open(path, "rb") as f:
+    with open(path,"rb") as f:
 
         telegram_request(
             "sendPhoto",
             data={
-                "chat_id": CHAT_ID,
-                "caption": caption
+                "chat_id":CHAT_ID,
+                "caption":caption
             },
             files={
-                "photo": f
+                "photo":f
             }
         )
 
@@ -241,38 +262,38 @@ def send_photo(path, caption):
 
 def send_album(paths, caption):
 
-    media = []
-    files = {}
+    media=[]
+    files={}
 
 
-    for i, path in enumerate(paths):
+    for i,path in enumerate(paths):
 
-        key = f"photo{i}"
+        key=f"photo{i}"
 
-        item = {
-            "type": "photo",
-            "media": f"attach://{key}"
-        }
+        media.append({
+
+            "type":"photo",
+            "media":f"attach://{key}",
+
+            **(
+                {"caption":caption}
+                if i==0
+                else {}
+            )
+        })
 
 
-        if i == 0:
-            item["caption"] = caption
-
-
-        media.append(item)
-
-        files[key] = open(
+        files[key]=open(
             path,
             "rb"
         )
 
 
-
     telegram_request(
         "sendMediaGroup",
         data={
-            "chat_id": CHAT_ID,
-            "media": json.dumps(media)
+            "chat_id":CHAT_ID,
+            "media":json.dumps(media)
         },
         files=files
     )
@@ -285,13 +306,15 @@ def send_album(paths, caption):
 
 def main():
 
-    print("BOT STARTED")
+    print(
+        "BOT STARTED"
+    )
 
 
-    seen = load_seen()
+    seen=load_seen()
 
 
-    feed = feedparser.parse(
+    feed=feedparser.parse(
         RSS_URL
     )
 
@@ -303,29 +326,26 @@ def main():
             continue
 
 
+        title=entry.title
 
-        title = entry.title
 
-
-        author = getattr(
+        author=getattr(
             entry,
             "author",
             "unknown"
-        )
-
-
-        author = author.replace(
+        ).replace(
             "u/",
             ""
         )
 
 
+        caption=(
 
-        caption = (
             "📌 Reddit\n"
             f"👤 u/{author}\n\n"
             f"{title}\n\n"
             f"🔗 {entry.link}"
+
         )
 
 
@@ -335,31 +355,28 @@ def main():
         )
 
 
-
-        images = extract_gallery(
+        images=extract_gallery(
             entry.link
         )
 
 
         if not images:
 
-
-            img = extract_single_image(
+            img=extract_single_image(
                 entry
             )
-
 
             if img:
                 images.append(img)
 
 
 
-        downloaded = []
+        downloaded=[]
 
 
         for img in images:
 
-            file = download_file(
+            file=download_file(
                 img
             )
 
@@ -368,7 +385,9 @@ def main():
 
 
 
-        if len(downloaded) > 1:
+        # πλέον δεν στέλνει text-only
+
+        if len(downloaded)>1:
 
             print(
                 "Gallery:",
@@ -381,11 +400,7 @@ def main():
             )
 
 
-        elif len(downloaded) == 1:
-
-            print(
-                "Image"
-            )
+        elif len(downloaded)==1:
 
             send_photo(
                 downloaded[0],
@@ -395,12 +410,8 @@ def main():
 
         else:
 
-            telegram_request(
-                "sendMessage",
-                data={
-                    "chat_id": CHAT_ID,
-                    "text": caption
-                }
+            print(
+                "No media - skipped"
             )
 
 
@@ -415,16 +426,20 @@ def main():
 
 
 
-        seen.add(entry.id)
+        seen.add(
+            entry.id
+        )
 
 
         time.sleep(5)
 
 
 
-    save_seen(seen)
+    save_seen(
+        seen
+    )
 
 
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
