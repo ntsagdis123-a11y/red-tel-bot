@@ -8,11 +8,9 @@ import re
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-
 SUBREDDIT = "videos"
 
 RSS_URL = f"https://www.reddit.com/r/GreekDick/.rss"
-
 
 SEEN_FILE = "seen.json"
 
@@ -20,7 +18,6 @@ SEEN_FILE = "seen.json"
 def load_seen():
 
     if os.path.exists(SEEN_FILE):
-
         with open(SEEN_FILE, "r") as f:
             return set(json.load(f))
 
@@ -61,46 +58,80 @@ def send_photo(url, caption):
 
 
 
-def send_message(text):
+def send_album(images, caption):
+
+    media = []
+
+    for index, image in enumerate(images):
+
+        item = {
+            "type": "photo",
+            "media": image
+        }
+
+        # caption μόνο στην πρώτη φωτογραφία
+        if index == 0:
+            item["caption"] = caption
+
+        media.append(item)
+
 
     telegram(
-        "sendMessage",
+        "sendMediaGroup",
         {
             "chat_id": CHAT_ID,
-            "text": text
+            "media": json.dumps(media)
         }
     )
 
 
 
-def extract_image(entry):
+def extract_images(entry):
 
     description = entry.description.replace("&amp;", "&")
 
+    images = []
 
-    images = re.findall(
+
+    # preview.redd.it
+    found = re.findall(
         r'https://preview\.redd\.it/[^"\s<>]+',
         description
     )
 
 
-    if images:
+    for img in found:
 
-        return images[0]
+        img = img.replace("&amp;", "&")
+
+        img = re.sub(
+            r'width=\d+',
+            'width=1080',
+            img
+        )
+
+        if img not in images:
+            images.append(img)
 
 
-    images = re.findall(
+
+    # i.redd.it
+    found = re.findall(
         r'https://i\.redd\.it/[^"\s<>]+',
         description
     )
 
 
-    if images:
+    for img in found:
 
-        return images[0]
+        img = img.replace("&amp;", "&")
+
+        if img not in images:
+            images.append(img)
 
 
-    return None
+
+    return images
 
 
 
@@ -135,12 +166,7 @@ def main():
 
 
         if hasattr(entry, "author"):
-
             author = entry.author
-
-
-
-        link = entry.link
 
 
 
@@ -148,42 +174,56 @@ def main():
             "📌 Reddit\n"
             f"👤 u/{author}\n\n"
             f"{title}\n\n"
-            f"🔗 {link}"
+            f"🔗 {entry.link}"
         )
 
 
 
-        print(
-            "Checking:",
-            title
-        )
+        print("Checking:", title)
 
 
 
-        image = extract_image(entry)
+        images = extract_images(entry)
 
 
 
-        if image:
+        if len(images) > 1:
+
+            print(
+                "Gallery found:",
+                len(images),
+                "images"
+            )
+
+            send_album(
+                images,
+                caption
+            )
+
+
+        elif len(images) == 1:
 
             print(
                 "Image found:",
-                image
+                images[0]
             )
 
             send_photo(
-                image,
+                images[0],
                 caption
             )
+
 
         else:
 
-            print(
-                "No image"
-            )
+            print("No image")
 
-            send_message(
-                caption
+            telegram(
+                "sendMessage",
+                {
+                    "chat_id": CHAT_ID,
+                    "text": caption
+                }
             )
 
 
@@ -197,5 +237,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     main()
