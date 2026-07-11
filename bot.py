@@ -5,6 +5,8 @@ import json
 import re
 import tempfile
 import time
+import subprocess
+import glob
 
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -16,6 +18,8 @@ RSS_URL = f"https://www.reddit.com/r/GreekDick/.rss"
 
 SEEN_FILE = "seen.json"
 
+MAX_VIDEO_SIZE = 190 * 1024 * 1024
+
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 RedditTelegramBot"
@@ -26,6 +30,7 @@ HEADERS = {
 def load_seen():
 
     if os.path.exists(SEEN_FILE):
+
         with open(SEEN_FILE, "r") as f:
             return set(json.load(f))
 
@@ -44,6 +49,7 @@ def telegram_request(method, data=None, files=None):
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
 
+
     while True:
 
         r = requests.post(
@@ -52,12 +58,15 @@ def telegram_request(method, data=None, files=None):
             files=files
         )
 
+
         try:
             result = r.json()
 
         except:
+
             print(r.text)
             return None
+
 
 
         if result.get("error_code") == 429:
@@ -65,63 +74,18 @@ def telegram_request(method, data=None, files=None):
             wait = result["parameters"]["retry_after"]
 
             print(
-                f"Telegram limit {wait}s"
+                "Telegram wait:",
+                wait
             )
 
             time.sleep(wait)
             continue
 
 
+
         print(result)
 
         return result
-
-
-
-def download_file(url):
-
-    try:
-
-        url = url.replace(
-            "&amp;",
-            "&"
-        )
-
-        r = requests.get(
-            url,
-            headers=HEADERS,
-            timeout=30
-        )
-
-
-        if r.status_code == 200:
-
-            ext = ".jpg"
-
-            if ".png" in url:
-                ext = ".png"
-
-
-            f = tempfile.NamedTemporaryFile(
-                delete=False,
-                suffix=ext
-            )
-
-            f.write(r.content)
-            f.close()
-
-            return f.name
-
-
-    except Exception as e:
-
-        print(
-            "Download error:",
-            e
-        )
-
-
-    return None
 
 
 
@@ -151,54 +115,124 @@ def get_reddit_json(url):
 
 
 
+def download(url):
+
+    try:
+
+        url = url.replace(
+            "&amp;",
+            "&"
+        )
+
+
+        r = requests.get(
+            url,
+            headers=HEADERS,
+            timeout=40
+        )
+
+
+        if r.status_code == 200:
+
+
+            ext=".jpg"
+
+
+            if ".png" in url:
+                ext=".png"
+
+
+            if ".gif" in url:
+                ext=".gif"
+
+
+            f=tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=ext
+            )
+
+
+            f.write(
+                r.content
+            )
+
+            f.close()
+
+            return f.name
+
+
+
+    except Exception as e:
+
+        print(
+            "Download error:",
+            e
+        )
+
+
+    return None
+
+
+
 def extract_gallery(post_url):
 
-    images = []
+    images=[]
 
-    data = get_reddit_json(post_url)
+
+    data=get_reddit_json(
+        post_url
+    )
+
 
     if not data:
         return images
 
 
+
     try:
 
-        post = data[0]["data"]["children"][0]["data"]
+        post=data[0]["data"]["children"][0]["data"]
 
 
-        gallery = post.get(
+        gallery=post.get(
             "gallery_data"
         )
 
-        metadata = post.get(
+
+        metadata=post.get(
             "media_metadata"
         )
 
 
         if gallery and metadata:
 
+
             for item in gallery["items"]:
 
-                media_id = item["media_id"]
+
+                mid=item["media_id"]
 
 
-                if media_id in metadata:
+                if mid in metadata:
 
-                    img = metadata[media_id]["s"]["u"]
 
-                    img = img.replace(
+                    url=metadata[mid]["s"]["u"]
+
+
+                    url=url.replace(
                         "&amp;",
                         "&"
                     )
 
 
-                    # καλύτερη ποιότητα
-                    img = img.replace(
+                    url=url.replace(
                         "preview.",
                         "i."
                     )
 
-                    images.append(img)
+
+                    images.append(url)
+
 
 
     except Exception as e:
@@ -213,30 +247,91 @@ def extract_gallery(post_url):
 
 
 
-def extract_single_image(entry):
+def extract_media(entry):
 
-    text = entry.description.replace(
+    media=[]
+
+
+    # gallery
+
+    gallery=extract_gallery(
+        entry.link
+    )
+
+
+    if gallery:
+        return gallery
+
+
+
+    text=entry.description.replace(
         "&amp;",
         "&"
     )
 
 
-    found = re.findall(
-        r'https://(?:preview\.redd\.it|i\.redd\.it)/[^"\s<>]+',
+    urls=re.findall(
+        r'https?://[^"\s<>]+',
         text
     )
 
 
-    if found:
+    for u in urls:
 
-        img = found[0]
 
-        img = img.replace(
-            "preview.",
-            "i."
+        if (
+            "redd.it" in u
+            or "redgifs.com" in u
+        ):
+
+            media.append(u)
+
+
+
+    return media
+    
+def download_video(url):
+
+    folder = tempfile.mkdtemp()
+
+    try:
+
+        command = [
+            "yt-dlp",
+            "-f",
+            "bestvideo+bestaudio/best",
+            "--merge-output-format",
+            "mp4",
+            "-o",
+            f"{folder}/video.%(ext)s",
+            url
+        ]
+
+
+        subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=180
         )
 
-        return img
+
+        files = glob.glob(
+            folder + "/*"
+        )
+
+
+        if files:
+
+            return files[0]
+
+
+    except Exception as e:
+
+        print(
+            "yt-dlp error:",
+            e
+        )
 
 
     return None
@@ -260,6 +355,38 @@ def send_photo(path, caption):
 
 
 
+def send_video(path, caption):
+
+    size=os.path.getsize(path)
+
+
+    if size > MAX_VIDEO_SIZE:
+
+        print(
+            "Video too large:",
+            size
+        )
+
+        return
+
+
+
+    with open(path,"rb") as f:
+
+        telegram_request(
+            "sendVideo",
+            data={
+                "chat_id":CHAT_ID,
+                "caption":caption,
+                "supports_streaming":True
+            },
+            files={
+                "video":f
+            }
+        )
+
+
+
 def send_album(paths, caption):
 
     media=[]
@@ -270,23 +397,26 @@ def send_album(paths, caption):
 
         key=f"photo{i}"
 
-        media.append({
 
+        item={
             "type":"photo",
-            "media":f"attach://{key}",
+            "media":f"attach://{key}"
+        }
 
-            **(
-                {"caption":caption}
-                if i==0
-                else {}
-            )
-        })
+
+        if i==0:
+
+            item["caption"]=caption
+
+
+        media.append(item)
 
 
         files[key]=open(
             path,
             "rb"
         )
+
 
 
     telegram_request(
@@ -297,6 +427,7 @@ def send_album(paths, caption):
         },
         files=files
     )
+
 
 
     for f in files.values():
@@ -319,11 +450,13 @@ def main():
     )
 
 
+
     for entry in reversed(feed.entries):
 
 
         if entry.id in seen:
             continue
+
 
 
         title=entry.title
@@ -337,6 +470,7 @@ def main():
             "u/",
             ""
         )
+
 
 
         caption=(
@@ -355,42 +489,75 @@ def main():
         )
 
 
-        images=extract_gallery(
-            entry.link
+
+        media=extract_media(
+            entry
         )
 
 
-        if not images:
 
-            img=extract_single_image(
-                entry
+        if not media:
+
+            print(
+                "No media - skip"
             )
 
-            if img:
-                images.append(img)
+            seen.add(
+                entry.id
+            )
+
+            continue
 
 
 
         downloaded=[]
 
 
-        for img in images:
-
-            file=download_file(
-                img
-            )
-
-            if file:
-                downloaded.append(file)
+        videos=[]
 
 
 
-        # πλέον δεν στέλνει text-only
+        for item in media:
+
+
+            if (
+                "redgifs.com" in item
+                or "/video/" in item
+            ):
+
+                print(
+                    "Video:",
+                    item
+                )
+
+
+                video=download_video(
+                    item
+                )
+
+
+                if video:
+                    videos.append(video)
+
+
+
+            else:
+
+
+                file=download(
+                    item
+                )
+
+
+                if file:
+                    downloaded.append(file)
+
+
 
         if len(downloaded)>1:
 
             print(
-                "Gallery:",
+                "Sending gallery:",
                 len(downloaded)
             )
 
@@ -408,20 +575,24 @@ def main():
             )
 
 
-        else:
 
-            print(
-                "No media - skipped"
+        for video in videos:
+
+            send_video(
+                video,
+                caption
             )
 
 
 
-        for f in downloaded:
+        for f in downloaded + videos:
 
             try:
+
                 os.remove(f)
 
             except:
+
                 pass
 
 
@@ -442,4 +613,5 @@ def main():
 
 
 if __name__=="__main__":
-    main()
+
+    main()    
