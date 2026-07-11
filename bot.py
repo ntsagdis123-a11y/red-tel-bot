@@ -10,7 +10,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 
 SUBREDDIT = "GreekDick"
 
-REDDIT_URL = f"https://www.reddit.com/r/GreekDick/.json?limit=10"
+REDDIT_URL = f"https://www.reddit.com/r/GreekDick/.rss"
 
 
 SEEN_FILE = "seen.json"
