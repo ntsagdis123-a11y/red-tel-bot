@@ -17,11 +17,6 @@ RSS_URL = f"https://www.reddit.com/r/GreekDick/.rss"
 SEEN_FILE = "seen.json"
 
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0"
-}
-
-
 def load_seen():
 
     if os.path.exists(SEEN_FILE):
@@ -80,26 +75,28 @@ def send_message(text):
 
 def extract_image(entry):
 
-    text = entry.description
+    description = entry.description.replace("&amp;", "&")
 
 
     images = re.findall(
-        r'https://preview\.redd\.it/[^"]+',
-        text
+        r'https://preview\.redd\.it/[^"\s<>]+',
+        description
     )
 
 
     if images:
+
         return images[0]
 
 
     images = re.findall(
-        r'https://i\.redd\.it/[^"]+',
-        text
+        r'https://i\.redd\.it/[^"\s<>]+',
+        description
     )
 
 
     if images:
+
         return images[0]
 
 
@@ -138,6 +135,7 @@ def main():
 
 
         if hasattr(entry, "author"):
+
             author = entry.author
 
 
@@ -148,10 +146,11 @@ def main():
 
         caption = (
             "📌 Reddit\n"
-            f"👤 {author}\n\n"
+            f"👤 u/{author}\n\n"
             f"{title}\n\n"
             f"🔗 {link}"
         )
+
 
 
         print(
@@ -179,6 +178,10 @@ def main():
 
         else:
 
+            print(
+                "No image"
+            )
+
             send_message(
                 caption
             )
@@ -194,4 +197,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
