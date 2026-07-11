@@ -17,7 +17,7 @@ SEEN_FILE = "seen.json"
 
 
 HEADERS = {
-    "User-Agent": "telegram-reddit-bot/1.0"
+    "User-Agent": "Mozilla/5.0 (compatible; RedditTelegramBot/1.0)"
 }
 
 
