@@ -1,60 +1,107 @@
-import feedparser
 import requests
 import os
 import json
+import time
 
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 
-RSS_URL = "https://www.reddit.com/r/GreekDick/.rss"
+SUBREDDIT = "GreekDick"
+
+REDDIT_URL = f"https://www.reddit.com/r/GreekDick/new.json?limit=10"
+
 
 SEEN_FILE = "seen.json"
 
 
+HEADERS = {
+    "User-Agent": "telegram-reddit-bot/1.0"
+}
+
+
 def load_seen():
+
     if os.path.exists(SEEN_FILE):
+
         with open(SEEN_FILE, "r") as f:
             return set(json.load(f))
 
     return set()
 
 
+
 def save_seen(seen):
+
     with open(SEEN_FILE, "w") as f:
         json.dump(list(seen), f)
 
 
-def send_photo(url, caption):
 
-    api = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+def telegram_request(method, data):
 
-    r = requests.post(
-        api,
-        data={
-            "chat_id": CHAT_ID,
-            "photo": url,
-            "caption": caption
-        }
-    )
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
+
+    r = requests.post(url, data=data)
 
     print(r.text)
 
 
+
+def send_photo(photo, caption):
+
+    telegram_request(
+        "sendPhoto",
+        {
+            "chat_id": CHAT_ID,
+            "photo": photo,
+            "caption": caption
+        }
+    )
+
+
+
 def send_message(text):
 
-    api = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-
-    r = requests.post(
-        api,
-        data={
+    telegram_request(
+        "sendMessage",
+        {
             "chat_id": CHAT_ID,
             "text": text
         }
     )
 
-    print(r.text)
+
+
+def get_image(post):
+
+    try:
+
+        if "preview" in post:
+
+            images = post["preview"]["images"]
+
+            if images:
+
+                return (
+                    images[0]
+                    ["source"]
+                    ["url"]
+                    .replace("&amp;", "&")
+                )
+
+
+        if post.get("thumbnail","").startswith("http"):
+
+            return post["thumbnail"]
+
+
+    except Exception:
+        pass
+
+
+    return None
 
 
 
@@ -62,38 +109,110 @@ def main():
 
     print("BOT STARTED")
 
+
     seen = load_seen()
 
-    feed = feedparser.parse(RSS_URL)
+
+    r = requests.get(
+        REDDIT_URL,
+        headers=HEADERS
+    )
 
 
-    for post in feed.entries[:10]:
+    if r.status_code != 200:
 
-        if post.id in seen:
+        print(
+            "Reddit error:",
+            r.status_code
+        )
+
+        return
+
+
+
+    data = r.json()
+
+
+    posts = data["data"]["children"]
+
+
+
+    for item in reversed(posts):
+
+
+        post = item["data"]
+
+
+        post_id = post["id"]
+
+
+        if post_id in seen:
             continue
 
 
-        title = post.title
-        link = post.link
-        user = post.author
 
-
-        caption = (
-            f"📌 Reddit\n"
-            f"👤 u/{user}\n\n"
-            f"{title}\n\n"
-            f"🔗 {link}"
+        title = post.get(
+            "title",
+            ""
         )
 
 
-        print("Found:", title)
+        author = post.get(
+            "author",
+            "unknown"
+        )
 
 
-        # αρχικά στέλνουμε το link
-        send_message(caption)
+        permalink = (
+            "https://reddit.com"
+            +
+            post.get(
+                "permalink",
+                ""
+            )
+        )
 
 
-        seen.add(post.id)
+        caption = (
+            "📌 Reddit\n"
+            f"👤 u/{author}\n\n"
+            f"{title}\n\n"
+            f"🔗 {permalink}"
+        )
+
+
+        print(
+            "Checking:",
+            title
+        )
+
+
+
+        image = get_image(post)
+
+
+
+        if image:
+
+            print(
+                "Image found:",
+                image
+            )
+
+            send_photo(
+                image,
+                caption
+            )
+
+        else:
+
+            send_message(
+                caption
+            )
+
+
+
+        seen.add(post_id)
 
 
 
@@ -102,4 +221,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
