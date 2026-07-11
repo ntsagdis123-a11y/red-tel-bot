@@ -1,23 +1,24 @@
 import requests
+import feedparser
 import os
 import json
-import time
+import re
 
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 
-SUBREDDIT = "GreekDick"
+SUBREDDIT = "videos"
 
-REDDIT_URL = f"https://www.reddit.com/r/GreekDick/.rss"
+RSS_URL = f"https://www.reddit.com/r/{SUBREDDIT}/.rss"
 
 
 SEEN_FILE = "seen.json"
 
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; RedditTelegramBot/1.0)"
+    "User-Agent": "Mozilla/5.0"
 }
 
 
@@ -39,23 +40,26 @@ def save_seen(seen):
 
 
 
-def telegram_request(method, data):
+def telegram(method, data):
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
 
-    r = requests.post(url, data=data)
+    r = requests.post(
+        url,
+        data=data
+    )
 
     print(r.text)
 
 
 
-def send_photo(photo, caption):
+def send_photo(url, caption):
 
-    telegram_request(
+    telegram(
         "sendPhoto",
         {
             "chat_id": CHAT_ID,
-            "photo": photo,
+            "photo": url,
             "caption": caption
         }
     )
@@ -64,7 +68,7 @@ def send_photo(photo, caption):
 
 def send_message(text):
 
-    telegram_request(
+    telegram(
         "sendMessage",
         {
             "chat_id": CHAT_ID,
@@ -74,31 +78,29 @@ def send_message(text):
 
 
 
-def get_image(post):
+def extract_image(entry):
 
-    try:
-
-        if "preview" in post:
-
-            images = post["preview"]["images"]
-
-            if images:
-
-                return (
-                    images[0]
-                    ["source"]
-                    ["url"]
-                    .replace("&amp;", "&")
-                )
+    text = entry.description
 
 
-        if post.get("thumbnail","").startswith("http"):
+    images = re.findall(
+        r'https://preview\.redd\.it/[^"]+',
+        text
+    )
 
-            return post["thumbnail"]
+
+    if images:
+        return images[0]
 
 
-    except Exception:
-        pass
+    images = re.findall(
+        r'https://i\.redd\.it/[^"]+',
+        text
+    )
+
+
+    if images:
+        return images[0]
 
 
     return None
@@ -113,37 +115,15 @@ def main():
     seen = load_seen()
 
 
-    r = requests.get(
-        REDDIT_URL,
-        headers=HEADERS
+    feed = feedparser.parse(
+        RSS_URL
     )
 
 
-    if r.status_code != 200:
-
-        print(
-            "Reddit error:",
-            r.status_code
-        )
-
-        return
+    for entry in reversed(feed.entries):
 
 
-
-    data = r.json()
-
-
-    posts = data["data"]["children"]
-
-
-
-    for item in reversed(posts):
-
-
-        post = item["data"]
-
-
-        post_id = post["id"]
+        post_id = entry.id
 
 
         if post_id in seen:
@@ -151,33 +131,26 @@ def main():
 
 
 
-        title = post.get(
-            "title",
-            ""
-        )
+        title = entry.title
 
 
-        author = post.get(
-            "author",
-            "unknown"
-        )
+        author = "unknown"
 
 
-        permalink = (
-            "https://reddit.com"
-            +
-            post.get(
-                "permalink",
-                ""
-            )
-        )
+        if hasattr(entry, "author"):
+            author = entry.author
+
+
+
+        link = entry.link
+
 
 
         caption = (
             "📌 Reddit\n"
-            f"👤 u/{author}\n\n"
+            f"👤 {author}\n\n"
             f"{title}\n\n"
-            f"🔗 {permalink}"
+            f"🔗 {link}"
         )
 
 
@@ -188,7 +161,7 @@ def main():
 
 
 
-        image = get_image(post)
+        image = extract_image(entry)
 
 
 
@@ -221,5 +194,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     main()
