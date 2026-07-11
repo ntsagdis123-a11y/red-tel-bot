@@ -31,8 +31,14 @@ def load_seen():
 
     if os.path.exists(SEEN_FILE):
 
-        with open(SEEN_FILE, "r") as f:
-            return set(json.load(f))
+        try:
+
+            with open(SEEN_FILE, "r") as f:
+                return set(json.load(f))
+
+        except:
+
+            return set()
 
     return set()
 
@@ -41,30 +47,44 @@ def load_seen():
 def save_seen(seen):
 
     with open(SEEN_FILE, "w") as f:
-        json.dump(list(seen), f)
+
+        json.dump(
+            list(seen),
+            f
+        )
 
 
 
 def telegram_request(method, data=None, files=None):
 
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
+    url = (
+        f"https://api.telegram.org/"
+        f"bot{BOT_TOKEN}/{method}"
+    )
 
 
     while True:
 
-        r = requests.post(
-            url,
-            data=data,
-            files=files
-        )
-
-
         try:
+
+            r = requests.post(
+                url,
+                data=data,
+                files=files,
+                timeout=60
+            )
+
+
             result = r.json()
 
-        except:
 
-            print(r.text)
+        except Exception as e:
+
+            print(
+                "Telegram error:",
+                e
+            )
+
             return None
 
 
@@ -74,11 +94,12 @@ def telegram_request(method, data=None, files=None):
             wait = result["parameters"]["retry_after"]
 
             print(
-                "Telegram wait:",
+                "Telegram rate limit:",
                 wait
             )
 
             time.sleep(wait)
+
             continue
 
 
@@ -99,14 +120,22 @@ def get_reddit_json(url):
             timeout=20
         )
 
+
         if r.status_code == 200:
+
             return r.json()
+
+
+        print(
+            "Reddit JSON status:",
+            r.status_code
+        )
 
 
     except Exception as e:
 
         print(
-            "JSON error:",
+            "Reddit JSON error:",
             e
         )
 
@@ -115,7 +144,7 @@ def get_reddit_json(url):
 
 
 
-def download(url):
+def download_file(url):
 
     try:
 
@@ -128,37 +157,42 @@ def download(url):
         r = requests.get(
             url,
             headers=HEADERS,
-            timeout=40
+            timeout=60
         )
 
 
-        if r.status_code == 200:
+        if r.status_code != 200:
+
+            return None
 
 
-            ext=".jpg"
+
+        ext = ".jpg"
 
 
-            if ".png" in url:
-                ext=".png"
+        if ".png" in url:
+            ext = ".png"
 
 
-            if ".gif" in url:
-                ext=".gif"
+        if ".gif" in url:
+            ext = ".gif"
 
 
-            f=tempfile.NamedTemporaryFile(
-                delete=False,
-                suffix=ext
-            )
+
+        f = tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=ext
+        )
 
 
-            f.write(
-                r.content
-            )
+        f.write(
+            r.content
+        )
 
-            f.close()
+        f.close()
 
-            return f.name
+
+        return f.name
 
 
 
@@ -169,39 +203,40 @@ def download(url):
             e
         )
 
-
-    return None
+        return None
 
 
 
 def extract_gallery(post_url):
 
-    images=[]
+    images = []
 
 
-    data=get_reddit_json(
+    data = get_reddit_json(
         post_url
     )
 
 
     if not data:
+
         return images
 
 
 
     try:
 
-        post=data[0]["data"]["children"][0]["data"]
+        post = data[0]["data"]["children"][0]["data"]
 
 
-        gallery=post.get(
+        gallery = post.get(
             "gallery_data"
         )
 
 
-        metadata=post.get(
+        metadata = post.get(
             "media_metadata"
         )
+
 
 
         if gallery and metadata:
@@ -209,30 +244,30 @@ def extract_gallery(post_url):
 
             for item in gallery["items"]:
 
-
-                mid=item["media_id"]
-
-
-                if mid in metadata:
+                media_id = item["media_id"]
 
 
-                    url=metadata[mid]["s"]["u"]
+                if media_id in metadata:
 
 
-                    url=url.replace(
+                    img = metadata[media_id]["s"]["u"]
+
+
+                    img = img.replace(
                         "&amp;",
                         "&"
                     )
 
 
-                    url=url.replace(
+                    img = img.replace(
                         "preview.",
                         "i."
                     )
 
 
-                    images.append(url)
-
+                    images.append(
+                        img
+                    )
 
 
     except Exception as e:
@@ -245,75 +280,112 @@ def extract_gallery(post_url):
 
     return images
 
-
-
 def extract_media(entry):
 
-    media=[]
+    media = []
 
 
-    # gallery
+    # Πρώτα ψάχνουμε gallery
 
-    gallery=extract_gallery(
+    gallery = extract_gallery(
         entry.link
     )
 
 
     if gallery:
+
         return gallery
 
 
 
-    text=entry.description.replace(
+    text = entry.description.replace(
         "&amp;",
         "&"
     )
 
 
-    urls=re.findall(
-        r'https?://[^"\s<>]+',
+    urls = re.findall(
+        r'https?://[^\s"<>]+',
         text
     )
 
 
-    for u in urls:
+    for url in urls:
 
 
         if (
-            "redd.it" in u
-            or "redgifs.com" in u
+            "i.redd.it" in url
+            or "preview.redd.it" in url
+            or "v.redd.it" in url
+            or "redgifs.com" in url
         ):
 
-            media.append(u)
+            media.append(
+                url
+            )
 
 
 
-    return media
-    
+    return list(
+        dict.fromkeys(media)
+    )
+
+
+
+def is_video(url):
+
+    return (
+        "v.redd.it" in url
+        or "redgifs.com" in url
+        or url.endswith(".gif")
+        or ".gif?" in url
+    )
+
+
+
 def download_video(url):
 
     folder = tempfile.mkdtemp()
 
+
     try:
 
+        print(
+            "yt-dlp:",
+            url
+        )
+
+
         command = [
+
             "yt-dlp",
+
             "-f",
             "bestvideo+bestaudio/best",
+
             "--merge-output-format",
             "mp4",
+
             "-o",
             f"{folder}/video.%(ext)s",
+
             url
         ]
 
 
+
         subprocess.run(
+
             command,
+
             stdout=subprocess.DEVNULL,
+
             stderr=subprocess.DEVNULL,
+
             timeout=180
+
         )
+
 
 
         files = glob.glob(
@@ -326,10 +398,11 @@ def download_video(url):
             return files[0]
 
 
+
     except Exception as e:
 
         print(
-            "yt-dlp error:",
+            "Video download error:",
             e
         )
 
@@ -340,79 +413,152 @@ def download_video(url):
 
 def send_photo(path, caption):
 
-    with open(path,"rb") as f:
+    try:
 
-        telegram_request(
-            "sendPhoto",
-            data={
-                "chat_id":CHAT_ID,
-                "caption":caption
-            },
-            files={
-                "photo":f
-            }
+        with open(
+            path,
+            "rb"
+        ) as photo:
+
+
+            telegram_request(
+
+                "sendPhoto",
+
+                data={
+
+                    "chat_id": CHAT_ID,
+
+                    "caption": caption
+
+                },
+
+                files={
+
+                    "photo": photo
+
+                }
+
+            )
+
+
+    except Exception as e:
+
+        print(
+            "Photo error:",
+            e
         )
 
 
 
 def send_video(path, caption):
 
-    size=os.path.getsize(path)
+
+    size = os.path.getsize(
+        path
+    )
+
+
+    print(
+        "Video size:",
+        size
+    )
 
 
     if size > MAX_VIDEO_SIZE:
 
         print(
-            "Video too large:",
-            size
+            "Video too large, skipped"
         )
 
         return
 
 
 
-    with open(path,"rb") as f:
+    try:
 
-        telegram_request(
-            "sendVideo",
-            data={
-                "chat_id":CHAT_ID,
-                "caption":caption,
-                "supports_streaming":True
-            },
-            files={
-                "video":f
-            }
+        with open(
+            path,
+            "rb"
+        ) as video:
+
+
+            telegram_request(
+
+                "sendVideo",
+
+                data={
+
+                    "chat_id": CHAT_ID,
+
+                    "caption": caption,
+
+                    "supports_streaming": True
+
+                },
+
+                files={
+
+                    "video": video
+
+                }
+
+            )
+
+
+
+    except Exception as e:
+
+        print(
+            "Video send error:",
+            e
         )
 
 
 
 def send_album(paths, caption):
 
-    media=[]
-    files={}
+    if len(paths) > 10:
+
+        paths = paths[:10]
 
 
-    for i,path in enumerate(paths):
 
-        key=f"photo{i}"
+    media = []
+
+    files = {}
 
 
-        item={
-            "type":"photo",
-            "media":f"attach://{key}"
+
+    for i, path in enumerate(paths):
+
+
+        key = f"photo{i}"
+
+
+
+        item = {
+
+            "type": "photo",
+
+            "media": f"attach://{key}"
+
         }
 
 
-        if i==0:
 
-            item["caption"]=caption
+        if i == 0:
 
-
-        media.append(item)
+            item["caption"] = caption
 
 
-        files[key]=open(
+
+        media.append(
+            item
+        )
+
+
+        files[key] = open(
             path,
             "rb"
         )
@@ -420,20 +566,26 @@ def send_album(paths, caption):
 
 
     telegram_request(
+
         "sendMediaGroup",
+
         data={
-            "chat_id":CHAT_ID,
-            "media":json.dumps(media)
+
+            "chat_id": CHAT_ID,
+
+            "media": json.dumps(media)
+
         },
+
         files=files
+
     )
 
 
 
     for f in files.values():
+
         f.close()
-
-
 
 def main():
 
@@ -442,11 +594,17 @@ def main():
     )
 
 
-    seen=load_seen()
+    seen = load_seen()
 
 
-    feed=feedparser.parse(
+    feed = feedparser.parse(
         RSS_URL
+    )
+
+
+    print(
+        "Posts found:",
+        len(feed.entries)
     )
 
 
@@ -455,32 +613,41 @@ def main():
 
 
         if entry.id in seen:
+
             continue
 
 
 
-        title=entry.title
+        title = entry.title
 
 
-        author=getattr(
+
+        author = getattr(
             entry,
             "author",
             "unknown"
-        ).replace(
+        )
+
+
+        author = author.replace(
             "u/",
             ""
         )
 
 
 
-        caption=(
+        caption = (
 
             "📌 Reddit\n"
+
             f"👤 u/{author}\n\n"
+
             f"{title}\n\n"
+
             f"🔗 {entry.link}"
 
         )
+
 
 
         print(
@@ -490,7 +657,7 @@ def main():
 
 
 
-        media=extract_media(
+        media = extract_media(
             entry
         )
 
@@ -498,9 +665,11 @@ def main():
 
         if not media:
 
+
             print(
-                "No media - skip"
+                "No media - skipped"
             )
+
 
             seen.add(
                 entry.id
@@ -510,73 +679,93 @@ def main():
 
 
 
-        downloaded=[]
 
+        photos = []
 
-        videos=[]
+        videos = []
 
 
 
         for item in media:
 
 
-            if (
-                "redgifs.com" in item
-                or "/video/" in item
-            ):
 
-                print(
-                    "Video:",
-                    item
-                )
+            if is_video(item):
 
 
-                video=download_video(
+                video = download_video(
                     item
                 )
 
 
                 if video:
-                    videos.append(video)
+
+                    videos.append(
+                        video
+                    )
 
 
 
             else:
 
 
-                file=download(
+                img = download_file(
                     item
                 )
 
 
-                if file:
-                    downloaded.append(file)
+                if img:
+
+                    photos.append(
+                        img
+                    )
 
 
 
-        if len(downloaded)>1:
+
+        # galleries
+
+        if len(photos) > 1:
+
 
             print(
-                "Sending gallery:",
-                len(downloaded)
+                "Gallery:",
+                len(photos)
             )
+
 
             send_album(
-                downloaded,
+                photos,
                 caption
             )
 
 
-        elif len(downloaded)==1:
+
+        elif len(photos) == 1:
+
+
+            print(
+                "Single image"
+            )
+
 
             send_photo(
-                downloaded[0],
+                photos[0],
                 caption
             )
 
 
 
+
+        # videos
+
         for video in videos:
+
+
+            print(
+                "Sending video"
+            )
+
 
             send_video(
                 video,
@@ -585,11 +774,18 @@ def main():
 
 
 
-        for f in downloaded + videos:
+
+        # καθάρισμα προσωρινών αρχείων
+
+        for file in photos + videos:
+
 
             try:
 
-                os.remove(f)
+                os.remove(
+                    file
+                )
+
 
             except:
 
@@ -597,9 +793,11 @@ def main():
 
 
 
+
         seen.add(
             entry.id
         )
+
 
 
         time.sleep(5)
@@ -612,6 +810,6 @@ def main():
 
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
 
-    main()    
+    main()
