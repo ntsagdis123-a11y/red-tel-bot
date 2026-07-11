@@ -8,7 +8,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 
-RSS_URL = "https://www.reddit.com/r/unknown/.rss"
+RSS_URL = "https://www.reddit.com/r/GreekDick/.rss"
 
 SEEN_FILE = "seen.json"
 
